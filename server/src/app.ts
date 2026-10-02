@@ -4,6 +4,8 @@ import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import mongoose from 'mongoose';
 import { notFound, errorHandler } from './middleware/errorMiddleware.js';
+import authRoutes from './features/auth/auth.routes.js';
+import mapRoutes from './features/map/map.routes.js';
 
 const app = express();
 
@@ -20,8 +22,9 @@ app.get('/api/health', (_req, res) => {
   res.status(dbConnected ? 200 : 503).json({ ok: dbConnected, db: dbConnected ? 'connected' : 'disconnected' });
 });
 
-// Feature routers are mounted here as each phase is built, e.g.
-// app.use('/api/auth', authRoutes);
+// Feature routers are mounted here as each phase is built
+app.use('/api/auth', authRoutes);
+app.use('/api/map', mapRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

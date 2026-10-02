@@ -7,3 +7,4 @@ dist/
 .vercel/
 dist/
 *.tsbuildinfo
+client/scripts/.cache/

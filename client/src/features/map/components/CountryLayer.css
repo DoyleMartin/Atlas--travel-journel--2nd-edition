@@ -1,1 +1,24 @@
-/* CountryLayer — TODO */
+.world-map .leaflet-interactive {
+  cursor: pointer;
+}
+
+/* Browsers draw a focus box around clicked SVG shapes; the hover/selected styling already shows it */
+.world-map path.leaflet-interactive:focus {
+  outline: none;
+}
+
+.country-tooltip.leaflet-tooltip {
+  padding: var(--space-1) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--color-text);
+  color: #fff;
+  font-family: var(--font-body);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  box-shadow: var(--shadow-md);
+}
+
+.country-tooltip.leaflet-tooltip-top::before {
+  border-top-color: var(--color-text);
+}

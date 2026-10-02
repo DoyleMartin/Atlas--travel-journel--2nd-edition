@@ -1,1 +1,5 @@
-/* ProtectedRoute — TODO */
+/* Holds the space while the session is restored, so the page doesn't jump */
+.protected-route__loading {
+  flex: 1;
+  min-height: 50vh;
+}

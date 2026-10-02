@@ -1,1 +1,45 @@
-/* MapPage — TODO */
+/* Fills the viewport below the navbar; the Leaflet map is absolutely positioned inside */
+.map-page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.map-page__overlay {
+  position: absolute;
+  z-index: var(--z-map-overlay);
+  left: 50%;
+  bottom: var(--space-8);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-5);
+  transform: translateX(-50%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full);
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+}
+
+.map-page__overlay-text {
+  font-size: var(--text-sm);
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.map-page__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--color-border-strong);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: map-page-spin 0.8s linear infinite;
+}
+
+@keyframes map-page-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

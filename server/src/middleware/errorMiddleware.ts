@@ -2,16 +2,21 @@ import type { ErrorRequestHandler, RequestHandler } from 'express';
 import mongoose from 'mongoose';
 import { ZodError } from 'zod';
 
-/** Error with an HTTP status. Throw this from controllers/services: `throw new HttpError(404, 'Trip not found')`. */
+/**
+ * Error with an HTTP status. Throw this from controllers/services: `throw new HttpError(404, 'Trip not found')`.
+ * `code` is a stable machine-readable string the client can branch on (e.g. 'TOKEN_EXPIRED').
+ */
 export class HttpError extends Error {
   status: number;
+  code?: string;
   details?: unknown;
 
-  constructor(status: number, message: string, details?: unknown) {
+  constructor(status: number, message: string, opts: { code?: string; details?: unknown } = {}) {
     super(message);
     this.name = 'HttpError';
     this.status = status;
-    this.details = details;
+    this.code = opts.code;
+    this.details = opts.details;
   }
 }
 
@@ -21,6 +26,7 @@ export const notFound: RequestHandler = (req, _res, next) => {
 
 interface ErrorBody {
   message: string;
+  code?: string;
   details?: unknown;
   stack?: string;
 }
@@ -32,11 +38,18 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   if (err instanceof HttpError) {
     status = err.status;
     body.message = err.message;
+    if (err.code) body.code = err.code;
     if (err.details !== undefined) body.details = err.details;
   } else if (err instanceof ZodError) {
     status = 400;
     body.message = 'Validation failed';
-    body.details = err.issues.map((i) => ({ path: i.path.join('.'), message: i.message }));
+    // First issue per field only — one message per form input
+    const byPath = new Map<string, string>();
+    for (const issue of err.issues) {
+      const path = issue.path.join('.');
+      if (!byPath.has(path)) byPath.set(path, issue.message);
+    }
+    body.details = [...byPath].map(([path, message]) => ({ path, message }));
   } else if (err instanceof mongoose.Error.ValidationError) {
     status = 400;
     body.message = 'Validation failed';
@@ -48,6 +61,7 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     status = 409;
     const field = Object.keys(err.keyValue ?? {})[0] ?? 'value';
     body.message = `That ${field} is already taken`;
+    body.details = [{ path: field, message: body.message }];
   } else if (isBodyParserError(err)) {
     status = err.status;
     body.message = err.type === 'entity.too.large' ? 'Request body too large' : 'Malformed request body';

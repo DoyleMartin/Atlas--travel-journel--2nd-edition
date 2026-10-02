@@ -117,8 +117,9 @@ Users build a lifetime travel map in minutes by tapping countries they've visite
 
 ### Auth
 - Register / login with email + password
-- Access token (15 min) + refresh token (7 days), both httpOnly cookies
-- Axios interceptor: on 401, call `/auth/refresh` once, then retry the original request
+- Access token (15-min JWT) + refresh token (7 days), both httpOnly cookies. The access *cookie* lives 7 days so an expired JWT is still sent and the server can answer `TOKEN_EXPIRED` (→ refresh) rather than `NOT_AUTHENTICATED` (→ logged out).
+- Axios interceptor: on a 401 with `code: "TOKEN_EXPIRED"`, call `/auth/refresh` once (shared across concurrent requests), then retry. Other 401s (wrong password, `NOT_AUTHENTICATED`) are not retried.
+- Error responses are `{ message, code?, details?: [{ path, message }] }` — one message per field, for inline form errors. Codes so far: `TOKEN_EXPIRED`, `NOT_AUTHENTICATED`, `INVALID_CREDENTIALS`, `REFRESH_INVALID`, `RATE_LIMITED`.
 - Protected routes on frontend; `requireAuth` / `optionalAuth` on backend
 
 ---
@@ -141,10 +142,12 @@ The frontend calls `/api/...` on its **own origin**. `client/vercel.json` rewrit
 - `optionalAuth` — attaches `req.user` if a valid token exists, otherwise continues as anonymous. Used by public profiles, public maps, shared watchback, and any `GET` of a trip/entry/photo (privacy decides access, not login).
 
 ### 4. Countries
-- GeoJSON: Natural Earth **50m** admin-0, simplified with mapshaper to ~1 MB, properties trimmed to `ADM0_A3`, `NAME`, `CONTINENT`.
+- GeoJSON: Natural Earth **50m** admin-0 (Antarctica removed), simplified with mapshaper to ~570 KB (~200 KB gzipped). Each feature has only `{ code, name }`; `code` is `ADM0_A3`.
+- **Generated, not hand-edited:** `cd client && npm run gen:countries` (`client/scripts/gen-countries.mjs`) downloads Natural Earth, writes the GeoJSON and both `countries.ts` copies.
 - Country identity = **`ADM0_A3`** (never `ISO_A3`, which is `-99` for France, Norway, Kosovo, etc.).
-- `client/src/data/countries.ts` and `server/src/data/countries.ts` (same content) are the canonical list: `{ code, name, continent, isUN }`. Stats use `isUN` entries (195) as the denominator. Territories (Greenland, Puerto Rico, …) can be marked but don't change the % stat.
-- Microstates too small to tap get a small circle marker at their centroid so they're still clickable.
+- `client/src/data/countries.ts` and `server/src/data/countries.ts` (same content) are the canonical list: `{ code, name, continent, iso2, isUN, label, small }`. `isUN` = the 193 UN members + Vatican + Palestine (dependencies that share a sovereign's ISO code are excluded). Continents are the 6 inhabited ones. Stats use `isUN` entries (195) as the denominator. Territories (Greenland, Puerto Rico, …) can be marked but don't change the % stat.
+- Countries under ~2,500 km² (`small`) that are UN members get a small circle marker at their label point so they're tappable at world zoom (Singapore, Malta, Monaco…). Small *territories* don't, to keep the ocean uncluttered — they're tappable once zoomed in.
+- Each country's SVG path carries `data-country="<code>"` (useful in DevTools and browser tests).
 
 ### 5. Map interaction modes
 - **Country mode (default):** tap polygon → toggle visited (undo toast). Tap a marked country → status popover.
@@ -173,16 +176,16 @@ Five phases. Each is independently deployable and testable. Don't start a new ph
 ### Phase 1 — Foundation
 *Goal: app skeleton, auth, and the map working.*
 
-- [ ] Project scaffolded (Vite + React client, Express server, git repo, MongoDB connected)
-- [ ] Folder structure created as defined below
-- [ ] Register / Login / Logout / Refresh with httpOnly cookie JWTs
-- [ ] Axios refresh-and-retry interceptor
-- [ ] Protected route wrapper on frontend; `requireAuth` + `optionalAuth` on backend
-- [ ] Basic user profile page (avatar, username, bio)
-- [ ] World map renders 50m GeoJSON country polygons (no basemap)
-- [ ] Tap a country → marked visited instantly → persists → undo toast
-- [ ] Status popover (visited / lived / want to visit / remove)
-- [ ] Stats bar (countries, continents, % of world — visited + lived only)
+- [x] Project scaffolded (Vite + React client, Express server, git repo, MongoDB connected)
+- [x] Folder structure created as defined below
+- [x] Register / Login / Logout / Refresh with httpOnly cookie JWTs
+- [x] Axios refresh-and-retry interceptor
+- [x] Protected route wrapper on frontend; `requireAuth` + `optionalAuth` on backend
+- [ ] Basic user profile page (avatar, username, bio) — *not covered by prompts 1a–1e; see 1f*
+- [x] World map renders 50m GeoJSON country polygons (no basemap)
+- [x] Tap a country → marked visited instantly → persists → undo toast
+- [x] Status popover (visited / lived / want to visit / remove)
+- [x] Stats bar (countries, continents, % of world — visited + lived only)
 
 **Definition of done:** a user can register, log in, tap countries, see them colored, change status, undo, and stats update live. Session survives past 15 minutes.
 
@@ -260,6 +263,9 @@ atlas/
 │   │   │
 │   │   ├── assets/
 │   │   │
+│   │   ├── types/
+│   │   │   └── api.ts               # Shapes the API returns (User, ApiErrorBody, …)
+│   │   │
 │   │   ├── data/
 │   │   │   └── countries.ts         # Canonical list { code, name, continent, isUN }
 │   │   │
@@ -293,12 +299,17 @@ atlas/
 │   │   │   ├── Avatar/              (Avatar.tsx, Avatar.css)
 │   │   │   ├── PrivacyToggle/       (PrivacyToggle.tsx, PrivacyToggle.css)
 │   │   │   ├── Toast/               (Toast.tsx, Toast.css)
-│   │   │   └── ProtectedRoute/      (ProtectedRoute.tsx, ProtectedRoute.css)
+│   │   │   ├── ProtectedRoute/      (ProtectedRoute.tsx, ProtectedRoute.css)
+│   │   │   ├── AppLayout/           (AppLayout.tsx, AppLayout.css) — Navbar + <Outlet/>
+│   │   │   ├── FormField/           (FormField.tsx, FormField.css) — label + input + inline error
+│   │   │   └── Logo/                (Logo.tsx, Logo.css)
 │   │   │
 │   │   ├── features/
 │   │   │   ├── auth/
 │   │   │   │   ├── pages/           LoginPage, RegisterPage (.tsx + .css)
-│   │   │   │   ├── components/      LoginForm, RegisterForm (.tsx + .css)
+│   │   │   │   ├── components/      AuthLayout, LoginForm, RegisterForm (.tsx + .css)
+│   │   │   │   ├── useAuthForm.ts   # Shared form state + server field errors
+│   │   │   │   ├── authRedirect.ts  # Safe "return to where you were" path
 │   │   │   │   └── authAPI.ts
 │   │   │   │
 │   │   │   ├── map/
@@ -306,6 +317,8 @@ atlas/
 │   │   │   │   ├── components/      WorldMap, CountryLayer, CountryPopover,
 │   │   │   │   │                    MicrostateMarkers, CityPin, CityModeControl,
 │   │   │   │   │                    MapStatsBar (.tsx + .css each)
+│   │   │   │   ├── mapStyle.ts      # Status colors (read from CSS variables) for Leaflet paths
+│   │   │   │   ├── useCountriesGeoJson.ts  # Fetches + caches countries.geojson once per page load
 │   │   │   │   └── mapAPI.ts
 │   │   │   │
 │   │   │   ├── trips/
@@ -344,6 +357,8 @@ atlas/
 │   │       └── api.ts               # Axios instance (baseURL /api) + refresh interceptor
 │   │
 │   ├── index.html
+│   ├── scripts/
+│   │   └── gen-countries.mjs        # npm run gen:countries → countries.geojson + both countries.ts
 │   ├── vite.config.ts               # server.proxy: /api → http://localhost:5000
 │   ├── tsconfig.json                # references tsconfig.app.json (src) + tsconfig.node.json (vite config)
 │   ├── src/vite-env.d.ts            # typed import.meta.env
@@ -371,9 +386,9 @@ atlas/
     │   │   └── validate.ts          # zod schema → 400
     │   │
     │   ├── features/
-    │   │   ├── auth/                auth.routes / auth.controller / auth.service
+    │   │   ├── auth/                auth.routes / auth.controller / auth.service / auth.schemas (zod)
     │   │   ├── users/               user.model / user.routes / user.controller / user.service
-    │   │   ├── map/                 map.routes / map.controller / map.service
+    │   │   ├── map/                 map.routes / map.controller / map.service / map.schemas (zod)
     │   │   ├── geocode/             geocode.routes / geocode.controller / geocode.service
     │   │   ├── trips/               trip.model / trip.routes / trip.controller / trip.service
     │   │   ├── journal/             entry.model / entry.routes / entry.controller / entry.service
@@ -382,6 +397,9 @@ atlas/
     │   │   ├── social/              social.routes / social.controller / social.service
     │   │   └── notifications/       notification.model / notification.routes /
     │   │                            notification.controller / notification.service
+    │   │
+    │   ├── types/
+    │   │   └── express.d.ts         # adds req.user to Express Request
     │   │
     │   └── utils/
     │       ├── generateToken.ts     # access + refresh token helpers, cookie options
